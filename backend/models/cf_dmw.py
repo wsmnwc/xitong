@@ -182,7 +182,7 @@ class CfDmwModel(BaseDetectionModel):
                 traceback.print_exc()
 
     def predict(
-        self, text_features: np.ndarray, image_features: np.ndarray
+        self, text_features: np.ndarray, image_features: np.ndarray, has_image: bool = True
     ) -> DetectionResult:
         with torch.no_grad():
             text_tensor = torch.tensor(
@@ -207,19 +207,43 @@ class CfDmwModel(BaseDetectionModel):
 
         is_hateful = hate_prob >= HATE_THRESHOLD
 
-        if text_weight > image_weight:
-            dominant = "文本"
-            ratio = text_weight / (text_weight + image_weight) * 100
+        if not has_image:
+            text_weight = 1.0
+            image_weight = 0.0
+            explanation = (
+                f"模型判定该内容{'包含仇恨言论' if is_hateful else '安全'}，"
+                f"置信度为 {hate_prob:.1%}。"
+                f"本次检测仅使用文本输入（未提供图片），判定完全基于文本模态。"
+            )
+            extra = {
+                "algorithm": "cf-dmw",
+                "dynamic_weights": {
+                    "w_t": round(text_weight, 4),
+                    "w_v": round(image_weight, 4),
+                },
+                "image_provided": False,
+            }
         else:
-            dominant = "图像"
-            ratio = image_weight / (text_weight + image_weight) * 100
+            if text_weight > image_weight:
+                dominant = "文本"
+                ratio = text_weight / (text_weight + image_weight) * 100
+            else:
+                dominant = "图像"
+                ratio = image_weight / (text_weight + image_weight) * 100
 
-        explanation = (
-            f"模型判定该内容{'包含仇恨言论' if is_hateful else '安全'}，"
-            f"置信度为 {hate_prob:.1%}。"
-            f"在本次判定中，{dominant}模态贡献占比 {ratio:.1f}%，"
-            f"是影响判定结果的主要因素。"
-        )
+            explanation = (
+                f"模型判定该内容{'包含仇恨言论' if is_hateful else '安全'}，"
+                f"置信度为 {hate_prob:.1%}。"
+                f"在本次判定中，{dominant}模态贡献占比 {ratio:.1f}%，"
+                f"是影响判定结果的主要因素。"
+            )
+            extra = {
+                "algorithm": "cf-dmw",
+                "dynamic_weights": {
+                    "w_t": round(text_weight, 4),
+                    "w_v": round(image_weight, 4),
+                },
+            }
 
         return DetectionResult(
             is_hateful=is_hateful,
@@ -227,13 +251,7 @@ class CfDmwModel(BaseDetectionModel):
             text_weight=text_weight,
             image_weight=image_weight,
             explanation=explanation,
-            extra={
-                "algorithm": "cf-dmw",
-                "dynamic_weights": {
-                    "w_t": round(text_weight, 4),
-                    "w_v": round(image_weight, 4),
-                },
-            },
+            extra=extra,
         )
 
     def get_algorithm_name(self) -> str:

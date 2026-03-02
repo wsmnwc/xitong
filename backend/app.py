@@ -130,7 +130,8 @@ async def detect_single(
     text = clean_text(text)
     extractor = get_extractor()
 
-    if image is not None:
+    has_image = image is not None
+    if has_image:
         image_bytes = await image.read()
         pil_image = load_image(image_bytes)
     else:
@@ -140,7 +141,7 @@ async def detect_single(
     image_features = extractor.extract_image_features(pil_image)
 
     model = get_model(algorithm)
-    result = model.predict(text_features, image_features)
+    result = model.predict(text_features, image_features, has_image=has_image)
 
     return DetectionResponse(
         is_hateful=result.is_hateful,
@@ -162,7 +163,8 @@ async def detect_single_json(request: DetectionRequest):
     text = clean_text(request.text)
     extractor = get_extractor()
 
-    if request.image_base64:
+    has_image = bool(request.image_base64)
+    if has_image:
         pil_image = decode_base64_image(request.image_base64)
     else:
         pil_image = create_placeholder_image()
@@ -171,7 +173,7 @@ async def detect_single_json(request: DetectionRequest):
     image_features = extractor.extract_image_features(pil_image)
 
     model = get_model(request.algorithm)
-    result = model.predict(text_features, image_features)
+    result = model.predict(text_features, image_features, has_image=has_image)
 
     return DetectionResponse(
         is_hateful=result.is_hateful,
@@ -209,17 +211,19 @@ async def detect_batch(
 
     for item in items:
         text = item["text"]
-        if item.get("image_base64"):
+        has_image = bool(item.get("image_base64"))
+        if has_image:
             try:
                 pil_image = decode_base64_image(item["image_base64"])
             except Exception:
                 pil_image = create_placeholder_image()
+                has_image = False
         else:
             pil_image = create_placeholder_image()
 
         text_features = extractor.extract_text_features(text)
         image_features = extractor.extract_image_features(pil_image)
-        result = model.predict(text_features, image_features)
+        result = model.predict(text_features, image_features, has_image=has_image)
 
         results.append(
             DetectionResponse(

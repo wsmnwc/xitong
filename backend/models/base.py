@@ -23,7 +23,7 @@ class BaseDetectionModel(ABC):
 
     @abstractmethod
     def predict(
-        self, text_features: np.ndarray, image_features: np.ndarray
+        self, text_features: np.ndarray, image_features: np.ndarray, has_image: bool = True
     ) -> DetectionResult:
         """
         对输入的文本和图像特征进行仇恨言论检测。
@@ -31,6 +31,7 @@ class BaseDetectionModel(ABC):
         Args:
             text_features: CLIP 提取的文本特征向量
             image_features: CLIP 提取的图像特征向量
+            has_image: 用户是否提供了真实图片（False 时图像特征为占位图生成）
 
         Returns:
             DetectionResult: 检测结果

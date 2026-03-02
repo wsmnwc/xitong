@@ -107,7 +107,7 @@ class CfDfModel(BaseDetectionModel):
                 print(f"[CF-DF] 加载权重失败，使用默认参数: {e}")
 
     def predict(
-        self, text_features: np.ndarray, image_features: np.ndarray
+        self, text_features: np.ndarray, image_features: np.ndarray, has_image: bool = True
     ) -> DetectionResult:
         with torch.no_grad():
             text_tensor = torch.tensor(
@@ -143,13 +143,34 @@ class CfDfModel(BaseDetectionModel):
                 f"说明该样本的特征偏置较小。"
             )
 
-        explanation = (
-            f"模型判定该内容{'包含仇恨言论' if is_hateful else '安全'}，"
-            f"净化后置信度为 {purified_score:.1%}。{bias_note}"
-        )
-
-        text_weight = 0.5
-        image_weight = 0.5
+        if not has_image:
+            text_weight = 1.0
+            image_weight = 0.0
+            explanation = (
+                f"模型判定该内容{'包含仇恨言论' if is_hateful else '安全'}，"
+                f"净化后置信度为 {purified_score:.1%}。"
+                f"本次检测仅使用文本输入（未提供图片），判定完全基于文本模态。{bias_note}"
+            )
+            extra = {
+                "algorithm": "cf-df",
+                "raw_probability": round(raw_score, 4),
+                "purified_probability": round(purified_score, 4),
+                "bias_removed": round(abs(diff), 4),
+                "image_provided": False,
+            }
+        else:
+            text_weight = 0.5
+            image_weight = 0.5
+            explanation = (
+                f"模型判定该内容{'包含仇恨言论' if is_hateful else '安全'}，"
+                f"净化后置信度为 {purified_score:.1%}。{bias_note}"
+            )
+            extra = {
+                "algorithm": "cf-df",
+                "raw_probability": round(raw_score, 4),
+                "purified_probability": round(purified_score, 4),
+                "bias_removed": round(abs(diff), 4),
+            }
 
         return DetectionResult(
             is_hateful=is_hateful,
@@ -157,12 +178,7 @@ class CfDfModel(BaseDetectionModel):
             text_weight=text_weight,
             image_weight=image_weight,
             explanation=explanation,
-            extra={
-                "algorithm": "cf-df",
-                "raw_probability": round(raw_score, 4),
-                "purified_probability": round(purified_score, 4),
-                "bias_removed": round(abs(diff), 4),
-            },
+            extra=extra,
         )
 
     def get_algorithm_name(self) -> str:
