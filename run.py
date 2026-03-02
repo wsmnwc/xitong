@@ -5,9 +5,14 @@
 1. gradio  - 启动 Gradio 前端界面（默认）
 2. api     - 启动 FastAPI 后端 API 服务
 3. both    - 同时启动前端和后端
+
+模型权重可通过命令行参数或环境变量指定：
+  --cf-dmw-weights / CF_DMW_WEIGHTS_PATH
+  --cf-df-weights  / CF_DF_WEIGHTS_PATH
 """
 
 import argparse
+import os
 import sys
 
 
@@ -46,7 +51,33 @@ def main() -> None:
     parser.add_argument(
         "--share", action="store_true", help="是否生成 Gradio 公共链接"
     )
+    parser.add_argument(
+        "--cf-dmw-weights",
+        type=str,
+        default="",
+        help="CF-DMW 模型权重文件路径 (.pt/.pth)",
+    )
+    parser.add_argument(
+        "--cf-df-weights",
+        type=str,
+        default="",
+        help="CF-DF 模型权重文件路径 (.pt/.pth)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="",
+        help="运行设备，如 cpu、cuda、cuda:0",
+    )
     args = parser.parse_args()
+
+    # 将命令行参数写入环境变量，供 backend.config 读取
+    if args.cf_dmw_weights:
+        os.environ["CF_DMW_WEIGHTS_PATH"] = args.cf_dmw_weights
+    if args.cf_df_weights:
+        os.environ["CF_DF_WEIGHTS_PATH"] = args.cf_df_weights
+    if args.device:
+        os.environ["DEVICE"] = args.device
 
     if args.mode == "gradio":
         start_gradio(port=args.gradio_port, share=args.share)

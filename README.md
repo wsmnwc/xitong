@@ -28,13 +28,13 @@ Multimodal Hate Speech Detection System
 
 ## 快速开始
 
-### 安装依赖
+### 1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 启动系统
+### 2. 启动系统
 
 ```bash
 # 启动 Gradio 前端界面（默认模式）
@@ -47,10 +47,80 @@ python run.py api
 python run.py both
 ```
 
-### 运行测试
+启动后在浏览器中打开 `http://localhost:7860` 即可访问 Gradio 界面。
+
+### 3. 运行测试
 
 ```bash
 python -m pytest tests/ -v
+```
+
+## 加载自定义模型权重
+
+系统支持加载自定义训练的 `.pt` / `.pth` 权重文件，有两种配置方式：
+
+### 方式一：通过命令行参数（推荐）
+
+```bash
+# 加载 CF-DMW 模型权重
+python run.py gradio --cf-dmw-weights /path/to/your/model.pt
+
+# 加载 CF-DF 模型权重
+python run.py gradio --cf-df-weights /path/to/your/model.pt
+
+# 同时加载两个模型，并指定 GPU
+python run.py gradio --cf-dmw-weights /path/to/cf_dmw.pt --cf-df-weights /path/to/cf_df.pt --device cuda:0
+```
+
+**Windows 示例**：假设你有一个 CF-DMW 模型在本地路径 `E:\6_A40_backup\...\MoRE_MAMI_best.pt`，运行：
+
+```bash
+python run.py gradio --cf-dmw-weights "E:\6_A40_backup\10.109.119.192\202506201824\MoRE-cf\src\MoRE_MAMI_best.pt" --device cuda:0
+```
+
+如果你没有 GPU，可以省略 `--device` 参数（默认使用 CPU）：
+
+```bash
+python run.py gradio --cf-dmw-weights "E:\6_A40_backup\10.109.119.192\202506201824\MoRE-cf\src\MoRE_MAMI_best.pt"
+```
+
+### 方式二：通过环境变量
+
+```bash
+# Linux / macOS
+export CF_DMW_WEIGHTS_PATH=/path/to/cf_dmw.pt
+export CF_DF_WEIGHTS_PATH=/path/to/cf_df.pt
+export DEVICE=cuda:0
+python run.py gradio
+
+# Windows (CMD)
+set CF_DMW_WEIGHTS_PATH=E:\6_A40_backup\10.109.119.192\202506201824\MoRE-cf\src\MoRE_MAMI_best.pt
+set DEVICE=cuda:0
+python run.py gradio
+
+# Windows (PowerShell)
+$env:CF_DMW_WEIGHTS_PATH="E:\6_A40_backup\10.109.119.192\202506201824\MoRE-cf\src\MoRE_MAMI_best.pt"
+$env:DEVICE="cuda:0"
+python run.py gradio
+```
+
+> **注意**：未配置权重时，系统使用默认随机初始化参数运行（适合演示和测试）。加载真实训练权重后才能获得准确的检测结果。
+
+## 完整命令行参数
+
+```
+python run.py [mode] [options]
+
+位置参数:
+  mode                    启动模式: gradio / api / both (默认: gradio)
+
+选项:
+  --gradio-port PORT      Gradio 端口 (默认: 7860)
+  --api-port PORT         FastAPI 端口 (默认: 8000)
+  --share                 生成 Gradio 公共链接
+  --cf-dmw-weights PATH   CF-DMW 模型权重文件路径
+  --cf-df-weights PATH    CF-DF 模型权重文件路径
+  --device DEVICE         运行设备: cpu / cuda / cuda:0 等 (默认: cpu)
 ```
 
 ## API 接口
@@ -82,14 +152,3 @@ python -m pytest tests/ -v
 └── tests/
     └── test_backend.py       # 单元测试
 ```
-
-## 模型权重
-
-系统支持加载自定义训练的 `.pth` 权重文件。通过环境变量配置路径：
-
-```bash
-export CF_DMW_WEIGHTS_PATH=/path/to/cf_dmw.pth
-export CF_DF_WEIGHTS_PATH=/path/to/cf_df.pth
-```
-
-未配置权重时，系统使用默认初始化参数运行（适合演示）。
