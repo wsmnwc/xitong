@@ -68,8 +68,8 @@ def create_weight_pie_chart(text_weight: float, image_weight: float) -> plt.Figu
     """创建模态权重饼图"""
     fig, ax = plt.subplots(figsize=(5, 4))
     labels = [
-        f"Text / Wenben\n({text_weight:.1%})",
-        f"Image / Tuxiang\n({image_weight:.1%})",
+        f"文本模态\n({text_weight:.1%})",
+        f"图像模态\n({image_weight:.1%})",
     ]
     sizes = [text_weight, image_weight]
     colors = ["#5B8FF9", "#5AD8A6"]
@@ -86,7 +86,7 @@ def create_weight_pie_chart(text_weight: float, image_weight: float) -> plt.Figu
     for autotext in autotexts:
         autotext.set_fontsize(12)
         autotext.set_fontweight("bold")
-    ax.set_title("Modal Weight Distribution", fontsize=14, fontweight="bold")
+    ax.set_title("模态权重分布", fontsize=14, fontweight="bold")
     fig.tight_layout()
     return fig
 
@@ -96,7 +96,7 @@ def create_confidence_bar_chart(
 ) -> plt.Figure:
     """创建去偏前后置信度对比条形图"""
     fig, ax = plt.subplots(figsize=(5, 4))
-    categories = ["Before\nPurification", "After\nPurification"]
+    categories = ["净化前", "净化后"]
     values = [raw_prob, purified_prob]
     colors = ["#FF6B6B", "#5AD8A6"]
     bars = ax.bar(categories, values, color=colors, width=0.5, edgecolor="white")
@@ -111,8 +111,8 @@ def create_confidence_bar_chart(
             fontweight="bold",
         )
     ax.set_ylim(0, 1.15)
-    ax.set_ylabel("Hate Probability", fontsize=12)
-    ax.set_title("Confidence Before vs After Purification", fontsize=14, fontweight="bold")
+    ax.set_ylabel("仇恨概率", fontsize=12)
+    ax.set_title("去偏前后置信度对比", fontsize=14, fontweight="bold")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
@@ -123,7 +123,7 @@ def detect_single(text: str, image, algorithm_display: str):
     """单样本检测核心逻辑"""
     if not text or not text.strip():
         return (
-            "**Please enter text content for detection.**",
+            "**请输入待检测的文本内容。**",
             None,
             "",
         )
@@ -145,24 +145,24 @@ def detect_single(text: str, image, algorithm_display: str):
 
     if result.is_hateful:
         status_emoji = "\U0001f6a8"
-        status_text = "HATE SPEECH DETECTED"
+        status_text = "仇恨言论"
         status_color = "red"
     else:
         status_emoji = "\u2705"
-        status_text = "SAFE CONTENT"
+        status_text = "安全内容"
         status_color = "green"
 
     result_md = f"""
-## {status_emoji} Detection Result: <span style="color:{status_color}">{status_text}</span>
+## {status_emoji} 检测结果：<span style="color:{status_color}">{status_text}</span>
 
-| Item | Value |
+| 项目 | 数值 |
 |------|-------|
-| **Hate Probability** | **{result.hate_probability:.1%}** |
-| **Text Weight (w_t)** | {result.text_weight:.4f} |
-| **Image Weight (w_v)** | {result.image_weight:.4f} |
-| **Algorithm** | {algorithm_display} |
+| **仇恨概率** | **{result.hate_probability:.1%}** |
+| **文本权重 (w_t)** | {result.text_weight:.4f} |
+| **图像权重 (w_v)** | {result.image_weight:.4f} |
+| **使用算法** | {algorithm_display} |
 
-### Explanation
+### 📊 可解释性分析
 {result.explanation}
 """
 
@@ -182,7 +182,7 @@ def detect_single(text: str, image, algorithm_display: str):
 def detect_batch(file, algorithm_display: str):
     """批量检测核心逻辑"""
     if file is None:
-        return "**Please upload a CSV or JSON file.**", None, None
+        return "**请上传 CSV 或 JSON 文件。**", None, None
 
     algorithm = ALGO_MAP.get(algorithm_display, ALGORITHM_CF_DMW)
     file_path = file.name if hasattr(file, "name") else str(file)
@@ -195,10 +195,10 @@ def detect_batch(file, algorithm_display: str):
     elif file_path.endswith(".json"):
         items = parse_batch_json(content)
     else:
-        return "**Only .csv and .json formats are supported.**", None, None
+        return "**仅支持 .csv 和 .json 格式。**", None, None
 
     if not items:
-        return "**No valid data entries found in the file.**", None, None
+        return "**文件中未找到有效数据条目。**", None, None
 
     extractor = get_extractor()
     model = get_model(algorithm)
@@ -220,44 +220,44 @@ def detect_batch(file, algorithm_display: str):
 
         results_data.append(
             {
-                "Text": text[:50] + ("..." if len(text) > 50 else ""),
-                "Result": "Hate" if result.is_hateful else "Safe",
-                "Probability": f"{result.hate_probability:.1%}",
-                "Text Weight": f"{result.text_weight:.4f}",
-                "Image Weight": f"{result.image_weight:.4f}",
+                "文本": text[:50] + ("..." if len(text) > 50 else ""),
+                "结果": "仇恨言论" if result.is_hateful else "安全内容",
+                "概率": f"{result.hate_probability:.1%}",
+                "文本权重": f"{result.text_weight:.4f}",
+                "图像权重": f"{result.image_weight:.4f}",
             }
         )
 
     df = pd.DataFrame(results_data)
-    hateful_count = sum(1 for r in results_data if r["Result"] == "Hate")
+    hateful_count = sum(1 for r in results_data if r["结果"] == "仇恨言论")
     safe_count = len(results_data) - hateful_count
 
     summary_md = f"""
-## Batch Detection Complete
+## 批量检测完成
 
-| Statistics | Value |
+| 统计项目 | 数值 |
 |-----------|-------|
-| **Total Samples** | {len(results_data)} |
-| **Hate Speech** | {hateful_count} |
-| **Safe Content** | {safe_count} |
-| **Hate Ratio** | {hateful_count / len(results_data):.1%} |
-| **Algorithm** | {algorithm_display} |
+| **总样本数** | {len(results_data)} |
+| **仇恨言论** | {hateful_count} |
+| **安全内容** | {safe_count} |
+| **仇恨比例** | {hateful_count / len(results_data):.1%} |
+| **使用算法** | {algorithm_display} |
 """
 
     fig, ax = plt.subplots(figsize=(5, 4))
     ax.bar(
-        ["Hate Speech", "Safe Content"],
+        ["仇恨言论", "安全内容"],
         [hateful_count, safe_count],
         color=["#FF6B6B", "#5AD8A6"],
         width=0.5,
         edgecolor="white",
     )
-    ax.set_ylabel("Count", fontsize=12)
-    ax.set_title("Batch Detection Results", fontsize=14, fontweight="bold")
+    ax.set_ylabel("数量", fontsize=12)
+    ax.set_title("批量检测结果统计", fontsize=14, fontweight="bold")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     for i, (label, count) in enumerate(
-        zip(["Hate", "Safe"], [hateful_count, safe_count])
+        zip(["仇恨言论", "安全内容"], [hateful_count, safe_count])
     ):
         ax.text(i, count + 0.2, str(count), ha="center", fontsize=13, fontweight="bold")
     fig.tight_layout()
@@ -269,56 +269,74 @@ def build_interface() -> gr.Blocks:
     """构建 Gradio 界面"""
     _theme = gr.themes.Soft(primary_hue="blue")
     _css = """
-    .result-hateful { background-color: #fee2e2 !important; border: 2px solid #ef4444 !important; }
-    .result-safe { background-color: #dcfce7 !important; border: 2px solid #22c55e !important; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+    .header-box {
+        background: linear-gradient(135deg, #1a237e 0%, #0d47a1 50%, #1565c0 100%);
+        border-radius: 12px;
+        padding: 24px 32px;
+        margin-bottom: 16px;
+        color: white !important;
+        text-align: center;
+    }
+    .header-box h1 { color: white !important; font-size: 2rem; margin-bottom: 6px; }
+    .header-box p  { color: #bbdefb !important; font-size: 1rem; margin: 0; }
+    .result-hateful {
+        background-color: #fee2e2 !important;
+        border: 2px solid #ef4444 !important;
+        border-radius: 8px;
+        padding: 8px;
+    }
+    .result-safe {
+        background-color: #dcfce7 !important;
+        border: 2px solid #22c55e !important;
+        border-radius: 8px;
+        padding: 8px;
+    }
+    .gr-button-primary { background-color: #1565c0 !important; font-size: 1rem !important; }
+    .gr-button-primary:hover { background-color: #0d47a1 !important; }
     """
     with gr.Blocks(
-        title="Multimodal Hate Speech Detection System",
+        title="多模态仇恨言论检测系统",
     ) as demo:
         demo.theme = _theme
         demo.css = _css
-        gr.Markdown(
-            """
-        # \U0001f6e1\ufe0f Multimodal Hate Speech Detection System
-        ### Duomotai Chouhen Yanlun Jiance Xitong
-
-        This system supports two detection algorithms:
-        - **CF-DMW**: Counterfactual detection based on dynamic modal weights — visualizes the contribution of text vs image modalities
-        - **CF-DF**: Counterfactual detection based on diffusion purification — shows confidence before and after debiasing
-        """
+        gr.HTML(
+            '<div class="header-box">'
+            "<h1>🛡️ 多模态仇恨言论检测系统</h1>"
+            "<p>基于 CLIP + MoRE 的智能检测平台 | 专业硕士学位论文演示系统</p>"
+            "</div>"
         )
 
         with gr.Tabs():
-            # === Tab 1: Single sample detection ===
-            with gr.TabItem("\U0001f50d Single Sample Detection"):
-                gr.Markdown("### Upload an image and enter text for detection")
+            # === Tab 1: 单样本检测 ===
+            with gr.TabItem("🔍 单样本检测"):
                 with gr.Row():
                     with gr.Column(scale=1):
                         input_image = gr.Image(
-                            label="Upload Image (optional)",
+                            label="上传图片（可选）",
                             type="pil",
                         )
                         input_text = gr.Textbox(
-                            label="Input Text",
-                            placeholder="Enter the text content to detect...",
+                            label="输入文本",
+                            placeholder="请输入待检测的文本内容...",
                             lines=3,
                         )
                         algo_select = gr.Dropdown(
                             choices=list(ALGO_MAP.keys()),
                             value=list(ALGO_MAP.keys())[0],
-                            label="Select Algorithm",
+                            label="选择检测算法",
                         )
                         detect_btn = gr.Button(
-                            "\U0001f680 Start Detection",
+                            "🚀 开始检测",
                             variant="primary",
                             size="lg",
                         )
 
                     with gr.Column(scale=1):
-                        result_output = gr.Markdown(label="Detection Result")
-                        chart_output = gr.Plot(label="Visualization")
+                        result_output = gr.Markdown(label="检测结果")
+                        chart_output = gr.Plot(label="可视化分析")
                         extra_output = gr.Code(
-                            label="Detailed Data (JSON)",
+                            label="详细数据（JSON）",
                             language="json",
                         )
 
@@ -329,56 +347,44 @@ def build_interface() -> gr.Blocks:
                 )
 
                 gr.Markdown("---")
-                gr.Markdown("### \U0001f4a1 Quick Test Examples")
+                gr.Markdown("### 💡 快速测试示例")
                 gr.Examples(
                     examples=[
-                        [
-                            "I love this beautiful sunset photo, nature is amazing!",
-                            None,
-                            "CF-DMW（基于动态模态权重）",
-                        ],
-                        [
-                            "These people are disgusting and should be eliminated",
-                            None,
-                            "CF-DMW（基于动态模态权重）",
-                        ],
-                        [
-                            "What a wonderful day to enjoy life",
-                            None,
-                            "CF-DF（基于扩散净化）",
-                        ],
+                        ["为我的女朋友祈祷，她用了太多次狗狗滤镜，她真的变成了一条狗", None, "CF-DMW（基于动态模态权重）"],
+                        ["今天天气真好，适合出去散步", None, "CF-DMW（基于动态模态权重）"],
+                        ["这些人真恶心，应该被消灭", None, "CF-DF（基于扩散净化）"],
                     ],
                     inputs=[input_text, input_image, algo_select],
                 )
 
-            # === Tab 2: Batch detection ===
-            with gr.TabItem("\U0001f4c1 Batch Detection"):
+            # === Tab 2: 批量检测 ===
+            with gr.TabItem("📁 批量检测"):
                 gr.Markdown(
-                    """### Upload a CSV or JSON file for batch detection
-CSV format: must include a `text` column, and optionally an `image` column (Base64 encoded).
-JSON format: an array of objects, each containing `text` and optionally `image` fields."""
+                    """### 上传 CSV 或 JSON 文件进行批量检测
+CSV 格式：必须包含 `text` 列，可选包含 `image` 列（Base64 编码）。
+JSON 格式：对象数组，每个对象包含 `text` 字段，可选包含 `image` 字段。"""
                 )
                 with gr.Row():
                     with gr.Column(scale=1):
                         batch_file = gr.File(
-                            label="Upload File (.csv or .json)",
+                            label="上传文件（.csv 或 .json）",
                             file_types=[".csv", ".json"],
                         )
                         batch_algo = gr.Dropdown(
                             choices=list(ALGO_MAP.keys()),
                             value=list(ALGO_MAP.keys())[0],
-                            label="Select Algorithm",
+                            label="选择检测算法",
                         )
                         batch_btn = gr.Button(
-                            "\U0001f680 Start Batch Detection",
+                            "🚀 开始批量检测",
                             variant="primary",
                             size="lg",
                         )
 
                     with gr.Column(scale=1):
-                        batch_summary = gr.Markdown(label="Batch Summary")
-                        batch_table = gr.Dataframe(label="Detailed Results")
-                        batch_chart = gr.Plot(label="Result Statistics")
+                        batch_summary = gr.Markdown(label="批量检测结果")
+                        batch_table = gr.Dataframe(label="详细结果")
+                        batch_chart = gr.Plot(label="统计图表")
 
                 batch_btn.click(
                     fn=detect_batch,
@@ -386,36 +392,38 @@ JSON format: an array of objects, each containing `text` and optionally `image` 
                     outputs=[batch_summary, batch_table, batch_chart],
                 )
 
-            # === Tab 3: System info ===
-            with gr.TabItem("\u2139\ufe0f System Info"):
+            # === Tab 3: 系统信息 ===
+            with gr.TabItem("ℹ️ 系统信息"):
                 gr.Markdown(
                     f"""
-### System Configuration
+### 系统配置
 
-| Item | Detail |
+| 项目 | 详情 |
 |------|--------|
-| **CLIP Model** | `openai/clip-vit-base-patch32` |
-| **Device** | `{DEVICE}` |
-| **Algorithm 1** | CF-DMW (Counterfactual Dynamic Modal Weights) |
-| **Algorithm 2** | CF-DF (Counterfactual Diffusion Purification) |
-| **Framework** | PyTorch + FastAPI + Gradio |
+| **CLIP 模型** | `openai/clip-vit-base-patch32` |
+| **运行设备** | `{DEVICE}` |
+| **算法一** | CF-DMW（基于动态模态权重的反事实检测） |
+| **算法二** | CF-DF（基于扩散净化的反事实检测） |
+| **技术框架** | PyTorch + FastAPI + Gradio |
 
-### Algorithm Descriptions
+### 算法说明
 
-#### CF-DMW: Counterfactual Detection Based on Dynamic Modal Weights
-This algorithm dynamically computes the text modal weight $w_t$ and image modal weight $w_v$,
-adaptively assigning contribution from each modality for different samples,
-thus improving detection performance.
+#### CF-DMW: 基于动态模态权重的反事实检测
+该算法动态计算文本模态权重 $w_t$ 和图像模态权重 $w_v$，
+对不同样本自适应地分配各模态的贡献度，从而提升检测性能。
 
-#### CF-DF: Counterfactual Detection Based on Diffusion Purification
-This algorithm uses a diffusion process to debias and purify features,
-eliminating spurious correlations. It compares confidence before and after purification
-to demonstrate the debiasing effect.
+#### CF-DF: 基于扩散净化的反事实检测
+该算法利用扩散过程对特征进行去偏净化，消除虚假相关性。
+通过对比净化前后的置信度，直观展示去偏效果。
 
-### Usage Guide
-1. **Single Detection**: Upload an image and enter text, select an algorithm, click "Start Detection"
-2. **Batch Detection**: Prepare a CSV/JSON file, upload and select an algorithm, click "Start Batch Detection"
-3. **Result Interpretation**: Green = safe, Red = hate speech; check the visualization charts for explainability
+### 使用指南
+1. **单样本检测**：上传图片并输入文本，选择算法，点击「开始检测」
+2. **批量检测**：准备 CSV/JSON 文件，上传并选择算法，点击「开始批量检测」
+3. **结果解读**：绿色 = 安全内容，红色 = 仇恨言论；查看可视化图表了解可解释性分析
+
+### 论文引用说明
+本系统为专业硕士学位论文演示系统，基于 CLIP 视觉-语言预训练模型与 MoRE
+（Modal Re-weighting and Explanation）框架构建，实现多模态仇恨言论的可解释性检测。
 """
                 )
 
