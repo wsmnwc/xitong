@@ -1,72 +1,167 @@
 """
-CF-DMW 模型：基于动态模态权重的反事实多模态仇恨言论检测
+CF-DMW 模型：基于动态模态权重的反事实多模态仇恨言论检测 (MoRE)
 
-该模型通过动态计算文本模态权重 w_t 和图像模态权重 w_v，
+该模型通过路由器动态计算文本模态权重 w_t 和图像模态权重 w_v，
 实现对不同样本自适应地分配模态贡献度，从而提升检测性能。
-
-当有真实 .pth 权重文件时，可替换 _load_weights 中的逻辑。
 """
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from backend.config import CF_DMW_WEIGHTS_PATH, CLIP_FEATURE_DIM, HATE_THRESHOLD
 from backend.models.base import BaseDetectionModel, DetectionResult
 
 
-class DynamicWeightFusion(nn.Module):
-    """动态权重融合网络：根据输入特征计算各模态权重并融合"""
+class ModalExpert(nn.Module):
+    """模态专家网络"""
 
-    def __init__(self, feature_dim: int = CLIP_FEATURE_DIM):
+    def __init__(self, dim: int = 512, hidden_dim: int = 1024):
         super().__init__()
-        self.text_gate = nn.Sequential(
-            nn.Linear(feature_dim, 128),
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(128, 1),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, dim),
         )
-        self.image_gate = nn.Sequential(
-            nn.Linear(feature_dim, 128),
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.ffn(x)  # residual connection
+
+
+class VisionPositionalEncoding(nn.Module):
+    """图像位置编码"""
+
+    def __init__(self, num_patches: int = 16, dim: int = 512):
+        super().__init__()
+        self.positional_encoding = nn.Parameter(torch.zeros(num_patches, dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x shape: (batch, num_patches, dim) or (batch, dim)
+        if x.dim() == 2:
+            return x  # single vector, skip PE
+        return x + self.positional_encoding[: x.size(1)]
+
+
+class VisionPooling(nn.Module):
+    """图像注意力池化"""
+
+    def __init__(self, dim: int = 512):
+        super().__init__()
+        self.attention = nn.Linear(dim, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x shape: (batch, num_patches, dim) or (batch, dim)
+        if x.dim() == 2:
+            return x  # already a single vector
+        attn_weights = F.softmax(self.attention(x), dim=1)  # (batch, num_patches, 1)
+        pooled = (attn_weights * x).sum(dim=1)  # (batch, dim)
+        return pooled
+
+
+class MoREModel(nn.Module):
+    """
+    MoRE: Mixture of Routing Experts
+
+    Architecture matching MoRE_MAMI_best.pt state_dict (31 parameters).
+    """
+
+    def __init__(
+        self,
+        feature_dim: int = 512,
+        hidden_dim: int = 1024,
+        num_classes: int = 2,
+        classifier_hidden: int = 200,
+        num_patches: int = 16,
+    ):
+        super().__init__()
+        # Input projections
+        self.text_input_projection = nn.Linear(feature_dim, feature_dim)
+        self.vision_input_projection = nn.Linear(feature_dim, feature_dim)
+
+        # Modal experts
+        self.text_expert = ModalExpert(feature_dim, hidden_dim)
+        self.vision_expert = ModalExpert(feature_dim, hidden_dim)
+
+        # Vision positional encoding and pooling
+        self.vision_pe = VisionPositionalEncoding(num_patches, feature_dim)
+        self.vision_pooling = VisionPooling(feature_dim)
+
+        # Router: produces dynamic modal weights [w_t, w_v]
+        self.router = nn.Sequential(
+            nn.Linear(feature_dim * 2, feature_dim),
             nn.ReLU(),
-            nn.Linear(128, 1),
+            nn.Linear(feature_dim, num_classes),
         )
+
+        # Main classifier
         self.classifier = nn.Sequential(
-            nn.Linear(feature_dim, 256),
+            nn.Linear(feature_dim, classifier_hidden),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(256, 64),
+            nn.Dropout(0.1),
+            nn.Linear(classifier_hidden, num_classes),
+        )
+
+        # Unimodal predictors (for counterfactual training, needed for state_dict)
+        self.text_preditor = nn.Sequential(
+            nn.Linear(feature_dim, feature_dim),
             nn.ReLU(),
-            nn.Linear(64, 1),
-            nn.Sigmoid(),
+            nn.Linear(feature_dim, num_classes),
+        )
+        self.vision_preditor = nn.Sequential(
+            nn.Linear(feature_dim, feature_dim),
+            nn.ReLU(),
+            nn.Linear(feature_dim, num_classes),
         )
 
     def forward(
         self, text_features: torch.Tensor, image_features: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        前向传播
+        Forward pass.
+
+        Args:
+            text_features: (batch, feature_dim)
+            image_features: (batch, feature_dim)
 
         Returns:
-            (hate_prob, text_weight, image_weight)
+            (hate_logits, w_t, w_v)
         """
-        text_score = self.text_gate(text_features)
-        image_score = self.image_gate(image_features)
-        weights = torch.softmax(
-            torch.cat([text_score, image_score], dim=-1), dim=-1
-        )
-        w_t = weights[:, 0:1]
-        w_v = weights[:, 1:2]
-        fused = w_t * text_features + w_v * image_features
-        prob = self.classifier(fused)
-        return prob, w_t, w_v
+        # Project inputs
+        text_proj = self.text_input_projection(text_features)
+        vision_proj = self.vision_input_projection(image_features)
+
+        # Expert processing with residual
+        text_out = self.text_expert(text_proj)
+        vision_out = self.vision_expert(vision_proj)
+
+        # Vision PE + pooling (handles single-vector input gracefully)
+        vision_out = self.vision_pe(vision_out)
+        vision_out = self.vision_pooling(vision_out)
+
+        # Router: compute dynamic modal weights
+        combined = torch.cat([text_out, vision_out], dim=-1)
+        router_logits = self.router(combined)  # (batch, 2)
+        router_weights = F.softmax(router_logits, dim=-1)
+        w_t = router_weights[:, 0:1]  # (batch, 1)
+        w_v = router_weights[:, 1:2]  # (batch, 1)
+
+        # Weighted fusion
+        fused = w_t * text_out + w_v * vision_out
+
+        # Classification
+        logits = self.classifier(fused)  # (batch, 2)
+
+        return logits, w_t, w_v
 
 
 class CfDmwModel(BaseDetectionModel):
-    """CF-DMW 检测模型"""
+    """CF-DMW 检测模型（MoRE 架构）"""
 
     def __init__(self, device: str = "cpu"):
         self.device = torch.device(device)
-        self.model = DynamicWeightFusion(CLIP_FEATURE_DIM).to(self.device)
+        self.model = MoREModel(CLIP_FEATURE_DIM).to(self.device)
         self._load_weights()
         self.model.eval()
 
@@ -77,11 +172,14 @@ class CfDmwModel(BaseDetectionModel):
                 state_dict = torch.load(
                     CF_DMW_WEIGHTS_PATH,
                     map_location=self.device,
-                    weights_only=True,
+                    weights_only=False,
                 )
                 self.model.load_state_dict(state_dict)
+                print("[CF-DMW] ✅ 模型权重加载成功!")
             except Exception as e:
-                print(f"[CF-DMW] 加载权重失败，使用默认参数: {e}")
+                print(f"[CF-DMW] ❌ 加载权重失败，使用默认参数: {e}")
+                import traceback
+                traceback.print_exc()
 
     def predict(
         self, text_features: np.ndarray, image_features: np.ndarray
@@ -99,9 +197,11 @@ class CfDmwModel(BaseDetectionModel):
             if image_tensor.dim() == 1:
                 image_tensor = image_tensor.unsqueeze(0)
 
-            prob, w_t, w_v = self.model(text_tensor, image_tensor)
+            logits, w_t, w_v = self.model(text_tensor, image_tensor)
 
-            hate_prob = prob.item()
+            # 2-class output: softmax then take class-1 (hateful) probability
+            probs = F.softmax(logits, dim=-1)
+            hate_prob = probs[:, 1].item()
             text_weight = w_t.item()
             image_weight = w_v.item()
 

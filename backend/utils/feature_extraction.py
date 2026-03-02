@@ -51,10 +51,20 @@ class FeatureExtractor:
             )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             with torch.no_grad():
-                text_features = self._model.get_text_features(
+                outputs = self._model.get_text_features(
                     input_ids=inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
                 )
+            # Handle both tensor and BaseModelOutput return types
+            if hasattr(outputs, 'pooler_output'):
+                text_features = outputs.pooler_output
+            elif hasattr(outputs, 'last_hidden_state'):
+                text_features = outputs.last_hidden_state[:, 0, :]
+            elif isinstance(outputs, torch.Tensor):
+                text_features = outputs
+            else:
+                # Fallback: try to use it as a tensor-like object
+                text_features = outputs[0] if hasattr(outputs, '__getitem__') else outputs
             features = text_features.cpu().numpy().flatten()
             features = features / (np.linalg.norm(features) + 1e-8)
             return features
@@ -69,9 +79,18 @@ class FeatureExtractor:
             inputs = self._processor(images=image, return_tensors="pt")
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             with torch.no_grad():
-                image_features = self._model.get_image_features(
+                outputs = self._model.get_image_features(
                     pixel_values=inputs["pixel_values"]
                 )
+            # Handle both tensor and BaseModelOutput return types
+            if hasattr(outputs, 'pooler_output'):
+                image_features = outputs.pooler_output
+            elif hasattr(outputs, 'last_hidden_state'):
+                image_features = outputs.last_hidden_state[:, 0, :]
+            elif isinstance(outputs, torch.Tensor):
+                image_features = outputs
+            else:
+                image_features = outputs[0] if hasattr(outputs, '__getitem__') else outputs
             features = image_features.cpu().numpy().flatten()
             features = features / (np.linalg.norm(features) + 1e-8)
             return features
