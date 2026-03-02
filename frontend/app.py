@@ -68,8 +68,8 @@ def create_weight_pie_chart(text_weight: float, image_weight: float) -> plt.Figu
     """创建模态权重饼图"""
     fig, ax = plt.subplots(figsize=(5, 4))
     labels = [
-        f"Text / Wen Ben\n({text_weight:.1%})",
-        f"Image / Tu Xiang\n({image_weight:.1%})",
+        f"Text / Wenben\n({text_weight:.1%})",
+        f"Image / Tuxiang\n({image_weight:.1%})",
     ]
     sizes = [text_weight, image_weight]
     colors = ["#5B8FF9", "#5AD8A6"]
@@ -267,18 +267,20 @@ def detect_batch(file, algorithm_display: str):
 
 def build_interface() -> gr.Blocks:
     """构建 Gradio 界面"""
+    _theme = gr.themes.Soft(primary_hue="blue")
+    _css = """
+    .result-hateful { background-color: #fee2e2 !important; border: 2px solid #ef4444 !important; }
+    .result-safe { background-color: #dcfce7 !important; border: 2px solid #22c55e !important; }
+    """
     with gr.Blocks(
         title="Aspect-Level Multimodal Hate Speech Detection System",
-        theme=gr.themes.Soft(primary_hue="blue"),
-        css="""
-        .result-hateful { background-color: #fee2e2 !important; border: 2px solid #ef4444 !important; }
-        .result-safe { background-color: #dcfce7 !important; border: 2px solid #22c55e !important; }
-        """,
     ) as demo:
+        demo.theme = _theme
+        demo.css = _css
         gr.Markdown(
             """
         # \U0001f6e1\ufe0f Aspect-Level Multimodal Hate Speech Detection System
-        ### Fang Mian Ji Duo Mo Tai Chou Hen Yan Lun Jian Ce Xi Tong
+        ### Fangmianji Duomotai Chouhen Yanlun Jiance Xitong
 
         This system supports two detection algorithms:
         - **CF-DMW**: Counterfactual detection based on dynamic modal weights — visualizes the contribution of text vs image modalities
