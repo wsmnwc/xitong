@@ -4,8 +4,10 @@ CF-DF 模型：基于扩散净化的反事实多模态仇恨言论检测
 该模型通过扩散过程对特征进行去偏净化，消除虚假关联，
 对比净化前后的置信度变化，体现去偏效果。
 
-当有真实 .pth 权重文件时，可替换 _load_weights 中的逻辑。
+当有真实 .pth 权重文件时，可通过环境变量 CF_DF_WEIGHTS_PATH 指定路径。
 """
+
+import traceback
 
 import numpy as np
 import torch
@@ -100,11 +102,12 @@ class CfDfModel(BaseDetectionModel):
                 state_dict = torch.load(
                     CF_DF_WEIGHTS_PATH,
                     map_location=self.device,
-                    weights_only=True,
+                    weights_only=False,
                 )
                 self.model.load_state_dict(state_dict)
             except Exception as e:
                 print(f"[CF-DF] 加载权重失败，使用默认参数: {e}")
+                traceback.print_exc()
 
     def predict(
         self, text_features: np.ndarray, image_features: np.ndarray
