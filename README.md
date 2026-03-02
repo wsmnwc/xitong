@@ -155,7 +155,7 @@ xitong/
 
 ### 环境要求
 
-- Python 3.8+
+- Python 3.10+
 - CUDA 11.7+（推荐 GPU 推理，CPU 亦可运行）
 - 显存 ≥ 6GB（使用 CLIP ViT-B/32）
 
