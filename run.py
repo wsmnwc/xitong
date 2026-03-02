@@ -1,5 +1,5 @@
 """
-方面级多模态仇恨言论检测系统 - 主入口
+多模态仇恨言论检测系统 - 主入口
 
 支持两种启动模式：
 1. gradio  - 启动 Gradio 前端界面（默认）
@@ -28,7 +28,7 @@ def start_api(host: str = "0.0.0.0", port: int = 8000) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="方面级多模态仇恨言论检测系统"
+        description="多模态仇恨言论检测系统"
     )
     parser.add_argument(
         "mode",

@@ -1,7 +1,7 @@
 """
 Gradio 前端界面
 
-方面级多模态仇恨言论检测系统的交互式界面，包含三个核心模块：
+多模态仇恨言论检测系统的交互式界面，包含三个核心模块：
 1. 多模态数据录入与预处理
 2. 智能检测与算法调度
 3. 结果可视化与可解释性分析
@@ -273,14 +273,14 @@ def build_interface() -> gr.Blocks:
     .result-safe { background-color: #dcfce7 !important; border: 2px solid #22c55e !important; }
     """
     with gr.Blocks(
-        title="Aspect-Level Multimodal Hate Speech Detection System",
+        title="Multimodal Hate Speech Detection System",
     ) as demo:
         demo.theme = _theme
         demo.css = _css
         gr.Markdown(
             """
-        # \U0001f6e1\ufe0f Aspect-Level Multimodal Hate Speech Detection System
-        ### Fangmianji Duomotai Chouhen Yanlun Jiance Xitong
+        # \U0001f6e1\ufe0f Multimodal Hate Speech Detection System
+        ### Duomotai Chouhen Yanlun Jiance Xitong
 
         This system supports two detection algorithms:
         - **CF-DMW**: Counterfactual detection based on dynamic modal weights — visualizes the contribution of text vs image modalities

@@ -31,7 +31,7 @@ from backend.utils.preprocessing import (
 )
 
 app = FastAPI(
-    title="方面级多模态仇恨言论检测系统",
+    title="多模态仇恨言论检测系统",
     description="基于 CLIP 的多模态仇恨言论检测 API，支持 CF-DMW 和 CF-DF 两种算法",
     version="1.0.0",
 )

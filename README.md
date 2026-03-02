@@ -1,6 +1,6 @@
-# 🛡️ 方面级多模态仇恨言论检测系统
+# 🛡️ 多模态仇恨言论检测系统
 
-Aspect-Level Multimodal Hate Speech Detection System
+Multimodal Hate Speech Detection System
 
 基于 CLIP 的多模态仇恨言论检测系统，支持两种反事实检测算法（CF-DMW 和 CF-DF），提供完整的前后端交互和可解释性可视化。
 
