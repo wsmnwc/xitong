@@ -68,8 +68,8 @@ def create_weight_pie_chart(text_weight: float, image_weight: float) -> plt.Figu
     """创建模态权重饼图"""
     fig, ax = plt.subplots(figsize=(5, 4))
     labels = [
-        f"Text / Wenben\n({text_weight:.1%})",
-        f"Image / Tuxiang\n({image_weight:.1%})",
+        f"文本 (Text)\n({text_weight:.1%})",
+        f"图像 (Image)\n({image_weight:.1%})",
     ]
     sizes = [text_weight, image_weight]
     colors = ["#5B8FF9", "#5AD8A6"]
