@@ -91,6 +91,26 @@ def create_weight_pie_chart(text_weight: float, image_weight: float) -> plt.Figu
     return fig
 
 
+def create_text_only_chart() -> plt.Figure:
+    """创建纯文本模式说明图表（无图片输入时使用）"""
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.pie(
+        [1.0],
+        labels=["文本模态\n(100.0%)"],
+        colors=["#5B8FF9"],
+        startangle=90,
+        textprops={"fontsize": 11},
+    )
+    ax.set_title("模态权重分布（纯文本模式）", fontsize=14, fontweight="bold")
+    fig.text(
+        0.5, 0.02,
+        "本次检测未提供图片，仅使用文本模态",
+        ha="center", fontsize=10, color="gray",
+    )
+    fig.tight_layout()
+    return fig
+
+
 def create_confidence_bar_chart(
     raw_prob: float, purified_prob: float
 ) -> plt.Figure:
@@ -132,7 +152,8 @@ def detect_single(text: str, image, algorithm_display: str):
     text = clean_text(text)
     extractor = get_extractor()
 
-    if image is not None:
+    has_image = image is not None
+    if has_image:
         pil_image = load_image(image)
     else:
         pil_image = create_placeholder_image()
@@ -141,7 +162,7 @@ def detect_single(text: str, image, algorithm_display: str):
     image_features = extractor.extract_image_features(pil_image)
 
     model = get_model(algorithm)
-    result = model.predict(text_features, image_features)
+    result = model.predict(text_features, image_features, has_image=has_image)
 
     if result.is_hateful:
         status_emoji = "\U0001f6a8"
@@ -152,6 +173,8 @@ def detect_single(text: str, image, algorithm_display: str):
         status_text = "安全内容"
         status_color = "green"
 
+    image_weight_display = f"{result.image_weight:.4f}" if has_image else "N/A（未提供图片）"
+
     result_md = f"""
 ## {status_emoji} 检测结果：<span style="color:{status_color}">{status_text}</span>
 
@@ -159,7 +182,7 @@ def detect_single(text: str, image, algorithm_display: str):
 |------|-------|
 | **仇恨概率** | **{result.hate_probability:.1%}** |
 | **文本权重 (w_t)** | {result.text_weight:.4f} |
-| **图像权重 (w_v)** | {result.image_weight:.4f} |
+| **图像权重 (w_v)** | {image_weight_display} |
 | **使用算法** | {algorithm_display} |
 
 ### 📊 可解释性分析
@@ -167,7 +190,10 @@ def detect_single(text: str, image, algorithm_display: str):
 """
 
     if algorithm == ALGORITHM_CF_DMW:
-        chart = create_weight_pie_chart(result.text_weight, result.image_weight)
+        if has_image:
+            chart = create_weight_pie_chart(result.text_weight, result.image_weight)
+        else:
+            chart = create_text_only_chart()
     else:
         extra = result.extra or {}
         raw_prob = extra.get("raw_probability", result.hate_probability)
@@ -206,17 +232,19 @@ def detect_batch(file, algorithm_display: str):
 
     for item in items:
         text = item["text"]
-        if item.get("image_base64"):
+        has_image = bool(item.get("image_base64"))
+        if has_image:
             try:
                 pil_image = decode_base64_image(item["image_base64"])
             except Exception:
                 pil_image = create_placeholder_image()
+                has_image = False
         else:
             pil_image = create_placeholder_image()
 
         text_features = extractor.extract_text_features(text)
         image_features = extractor.extract_image_features(pil_image)
-        result = model.predict(text_features, image_features)
+        result = model.predict(text_features, image_features, has_image=has_image)
 
         results_data.append(
             {
@@ -224,7 +252,7 @@ def detect_batch(file, algorithm_display: str):
                 "结果": "仇恨" if result.is_hateful else "安全",
                 "概率": f"{result.hate_probability:.1%}",
                 "文本权重": f"{result.text_weight:.4f}",
-                "图像权重": f"{result.image_weight:.4f}",
+                "图像权重": f"{result.image_weight:.4f}" if has_image else "N/A",
             }
         )
 
