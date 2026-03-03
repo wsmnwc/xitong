@@ -9,6 +9,7 @@ Gradio 前端界面
 
 import io
 import json
+import os
 import tempfile
 
 import gradio as gr
@@ -29,7 +30,10 @@ from backend.utils.preprocessing import (
     parse_batch_csv,
     parse_batch_json,
     decode_base64_image,
+    is_mami_format,
+    parse_mami_csv,
 )
+from backend.utils.ocr import extract_text_from_image
 
 matplotlib.use("Agg")
 plt.rcParams["font.sans-serif"] = [
@@ -205,7 +209,7 @@ def detect_single(text: str, image, algorithm_display: str):
     return result_md, chart, extra_json
 
 
-def detect_batch(file, algorithm_display: str):
+def detect_batch(file, image_files_input, algorithm_display: str):
     """批量检测核心逻辑"""
     if file is None:
         return "**请上传 CSV 或 JSON 文件。**", None, None
@@ -213,15 +217,27 @@ def detect_batch(file, algorithm_display: str):
     algorithm = ALGO_MAP.get(algorithm_display, ALGORITHM_CF_DMW)
     file_path = file.name if hasattr(file, "name") else str(file)
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "rb") as f:
         content = f.read()
 
-    if file_path.endswith(".csv"):
-        items = parse_batch_csv(content)
+    # 构建图片文件名到字节的映射
+    image_files: dict = {}
+    if image_files_input:
+        for img_file in image_files_input:
+            img_path = img_file.name if hasattr(img_file, "name") else str(img_file)
+            fname = os.path.basename(img_path)
+            with open(img_path, "rb") as f:
+                image_files[fname] = f.read()
+
+    if file_path.endswith(".csv") or file_path.endswith(".tsv"):
+        if is_mami_format(content):
+            items = parse_mami_csv(content, image_files or None)
+        else:
+            items = parse_batch_csv(content)
     elif file_path.endswith(".json"):
         items = parse_batch_json(content)
     else:
-        return "**仅支持 .csv 和 .json 格式。**", None, None
+        return "**仅支持 .csv、.tsv 和 .json 格式。**", None, None
 
     if not items:
         return "**文件中未找到有效数据条目。**", None, None
@@ -302,7 +318,7 @@ def build_interface() -> gr.Blocks:
     .result-safe { background-color: #dcfce7 !important; border: 2px solid #22c55e !important; border-radius: 8px !important; }
     .gr-button.primary { background: linear-gradient(135deg, #1e3a5f, #2563eb) !important; font-weight: bold !important; letter-spacing: 1px !important; }
     #header-block { background: linear-gradient(135deg, #0f172a, #1e3a5f); border-radius: 12px; padding: 20px; margin-bottom: 12px; color: white !important; }
-    #header-block h1, #header-block h3 { color: white !important; }
+    #header-block * { color: white !important; }
     .tab-nav button { font-weight: bold !important; }
     """
     with gr.Blocks(
@@ -332,6 +348,7 @@ def build_interface() -> gr.Blocks:
                             label="上传图片（可选）",
                             type="pil",
                         )
+                        ocr_btn = gr.Button("🔍 OCR 识别文本", size="sm")
                         input_text = gr.Textbox(
                             label="输入文本",
                             placeholder="请输入待检测的英文文本内容...",
@@ -361,6 +378,11 @@ def build_interface() -> gr.Blocks:
                     inputs=[input_text, input_image, algo_select],
                     outputs=[result_output, chart_output, extra_output],
                 )
+                ocr_btn.click(
+                    fn=extract_text_from_image,
+                    inputs=[input_image],
+                    outputs=[input_text],
+                )
 
                 gr.Markdown("---")
                 gr.Markdown("### 💡 快速测试示例")
@@ -388,15 +410,22 @@ def build_interface() -> gr.Blocks:
             # === Tab 2: 批量检测 ===
             with gr.TabItem("📁 批量检测"):
                 gr.Markdown(
-                    """### 上传 CSV 或 JSON 文件进行批量检测
-CSV 格式：必须包含 `text` 列，可选包含 `image` 列（Base64 编码）。
-JSON 格式：对象数组，每个对象包含 `text` 字段，可选包含 `image` 字段。"""
+                    """### 上传 CSV/TSV 或 JSON 文件进行批量检测
+支持三种格式：
+- **MAMI TSV 格式**：tab 分隔，包含 `file_name` 和 `Text Transcription` 列，可配合上传图片文件夹使用。
+- **简单 CSV 格式**：必须包含 `text` 列，可选包含 `image` 列（Base64 编码）。
+- **JSON 格式**：对象数组，每个对象包含 `text` 字段，可选包含 `image` 字段。"""
                 )
                 with gr.Row():
                     with gr.Column(scale=1):
                         batch_file = gr.File(
-                            label="上传文件（.csv 或 .json）",
-                            file_types=[".csv", ".json"],
+                            label="上传文件（.csv、.tsv 或 .json）",
+                            file_types=[".csv", ".tsv", ".json"],
+                        )
+                        batch_images = gr.File(
+                            label="上传图片文件（可选，支持多文件）",
+                            file_count="multiple",
+                            file_types=["image"],
                         )
                         batch_algo = gr.Dropdown(
                             choices=list(ALGO_MAP.keys()),
@@ -416,7 +445,7 @@ JSON 格式：对象数组，每个对象包含 `text` 字段，可选包含 `im
 
                 batch_btn.click(
                     fn=detect_batch,
-                    inputs=[batch_file, batch_algo],
+                    inputs=[batch_file, batch_images, batch_algo],
                     outputs=[batch_summary, batch_table, batch_chart],
                 )
 
