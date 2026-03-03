@@ -114,6 +114,59 @@ def parse_batch_json(file_content: str | bytes) -> list[dict]:
     return results
 
 
+def is_mami_format(file_content: str | bytes) -> bool:
+    """
+    检查 CSV/TSV 内容是否是 MAMI 数据集格式。
+
+    MAMI 格式的第一行（标题行）必须同时包含 'file_name' 和
+    'Text Transcription' 列名。
+
+    Args:
+        file_content: CSV/TSV 文件的字符串或字节内容
+
+    Returns:
+        True 如果是 MAMI 格式，否则 False
+    """
+    if isinstance(file_content, bytes):
+        file_content = file_content.decode("utf-8")
+    first_line = file_content.split("\n")[0]
+    return "file_name" in first_line and "Text Transcription" in first_line
+
+
+def parse_mami_csv(file_content: str | bytes, image_files: dict | None = None) -> list[dict]:
+    """
+    解析 MAMI 数据集格式的 TSV/CSV 文件。
+
+    MAMI 格式：tab 分隔，包含 file_name 和 Text Transcription 列。
+
+    Args:
+        file_content: TSV/CSV 文件内容
+        image_files: 文件名到图片字节的映射 {filename: bytes}
+
+    Returns:
+        包含 {"text": str, "image_base64": str | None, "file_name": str} 的列表
+    """
+    if isinstance(file_content, bytes):
+        file_content = file_content.decode("utf-8")
+
+    reader = csv.DictReader(io.StringIO(file_content), delimiter="\t")
+    results = []
+    for row in reader:
+        file_name = row.get("file_name", "").strip()
+        text = clean_text(row.get("Text Transcription", ""))
+        image_base64 = None
+        if image_files and file_name in image_files:
+            image_bytes = image_files[file_name]
+            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        if text:
+            results.append({
+                "text": text,
+                "image_base64": image_base64,
+                "file_name": file_name,
+            })
+    return results
+
+
 def decode_base64_image(base64_str: str) -> Image.Image:
     """解码 Base64 编码的图像"""
     if "," in base64_str:
