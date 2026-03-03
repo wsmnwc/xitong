@@ -114,6 +114,75 @@ def parse_batch_json(file_content: str | bytes) -> list[dict]:
     return results
 
 
+def parse_mami_csv(
+    file_content: str | bytes,
+    image_files: dict[str, bytes] | None = None,
+) -> list[dict]:
+    """
+    解析 MAMI 数据集格式的 TSV/CSV 文件。
+
+    MAMI 格式：tab 分隔，包含 file_name 和 Text Transcription 列。
+    如果检测到普通 CSV（含 text 列），则回退到简单格式解析。
+
+    Args:
+        file_content: TSV/CSV 文件内容
+        image_files: 文件名到图片字节的映射 {filename: bytes}
+
+    Returns:
+        包含 {"text": str, "image_base64": str | None, "label": int | None,
+              "file_name": str | None} 的列表
+    """
+    if isinstance(file_content, bytes):
+        file_content = file_content.decode("utf-8")
+
+    # 自动检测分隔符：优先 tab，然后逗号
+    first_line = file_content.split("\n", 1)[0]
+    delimiter = "\t" if "\t" in first_line else ","
+
+    reader = csv.DictReader(io.StringIO(file_content), delimiter=delimiter)
+    fieldnames = reader.fieldnames or []
+
+    # 判断是否为 MAMI 格式
+    is_mami = "file_name" in fieldnames and "Text Transcription" in fieldnames
+
+    results = []
+    for row in reader:
+        if is_mami:
+            text = clean_text(row.get("Text Transcription", ""))
+            if not text:
+                continue
+            file_name = row.get("file_name", "").strip()
+            label_str = row.get("misogynous", None)
+            try:
+                label = int(label_str) if label_str is not None and label_str.strip() != "" else None
+            except (ValueError, AttributeError):
+                label = None
+
+            image_base64 = None
+            if image_files and file_name and file_name in image_files:
+                img_bytes = image_files[file_name]
+                image_base64 = base64.b64encode(img_bytes).decode("utf-8")
+
+            results.append({
+                "text": text,
+                "image_base64": image_base64,
+                "label": label,
+                "file_name": file_name,
+            })
+        else:
+            # 回退到简单格式
+            text = clean_text(row.get("text", ""))
+            if not text:
+                continue
+            results.append({
+                "text": text,
+                "image_base64": row.get("image", None),
+                "label": None,
+                "file_name": None,
+            })
+    return results
+
+
 def decode_base64_image(base64_str: str) -> Image.Image:
     """解码 Base64 编码的图像"""
     if "," in base64_str:

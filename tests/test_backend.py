@@ -15,6 +15,7 @@ from backend.utils.preprocessing import (
     load_image,
     parse_batch_csv,
     parse_batch_json,
+    parse_mami_csv,
 )
 from backend.utils.feature_extraction import FeatureExtractor
 
@@ -69,6 +70,43 @@ class TestPreprocessing:
     def test_parse_batch_json_invalid(self):
         with pytest.raises(ValueError):
             parse_batch_json('{"not": "a list"}')
+
+    def test_parse_mami_csv_basic(self):
+        tsv_content = (
+            "file_name\tmisogynous\tshaming\tstereotype\tobjectification\tviolence\tText Transcription\n"
+            "1.jpg\t0\t0\t0\t0\t0\tMilk Milk\n"
+            "10.jpg\t1\t0\t0\t0\t1\tROSES ARE RED\n"
+        )
+        items = parse_mami_csv(tsv_content)
+        assert len(items) == 2
+        assert items[0]["text"] == "Milk Milk"
+        assert items[0]["file_name"] == "1.jpg"
+        assert items[0]["label"] == 0
+        assert items[1]["text"] == "ROSES ARE RED"
+        assert items[1]["label"] == 1
+
+    def test_parse_mami_csv_with_image_files(self):
+        tsv_content = (
+            "file_name\tmisogynous\tText Transcription\n"
+            "1.jpg\t1\thello world\n"
+        )
+        # create a minimal valid PNG bytes
+        import io as _io
+        img = Image.new("RGB", (4, 4), "red")
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        img_bytes = buf.getvalue()
+
+        items = parse_mami_csv(tsv_content, image_files={"1.jpg": img_bytes})
+        assert len(items) == 1
+        assert items[0]["image_base64"] is not None
+
+    def test_parse_mami_csv_fallback_to_simple(self):
+        csv_content = "text,image\nhello world,\ntest text,\n"
+        items = parse_mami_csv(csv_content)
+        assert len(items) == 2
+        assert items[0]["text"] == "hello world"
+        assert items[0]["file_name"] is None
 
 
 # ===== 特征提取测试 =====

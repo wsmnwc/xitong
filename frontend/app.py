@@ -9,6 +9,7 @@ Gradio 前端界面
 
 import io
 import json
+import os
 import tempfile
 
 import gradio as gr
@@ -26,10 +27,11 @@ from backend.utils.preprocessing import (
     clean_text,
     create_placeholder_image,
     load_image,
-    parse_batch_csv,
     parse_batch_json,
+    parse_mami_csv,
     decode_base64_image,
 )
+from backend.utils.ocr import extract_text_from_image
 
 matplotlib.use("Agg")
 plt.rcParams["font.sans-serif"] = [
@@ -205,7 +207,7 @@ def detect_single(text: str, image, algorithm_display: str):
     return result_md, chart, extra_json
 
 
-def detect_batch(file, algorithm_display: str):
+def detect_batch(file, image_files_upload, algorithm_display: str):
     """批量检测核心逻辑"""
     if file is None:
         return "**请上传 CSV 或 JSON 文件。**", None, None
@@ -216,12 +218,26 @@ def detect_batch(file, algorithm_display: str):
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    if file_path.endswith(".csv"):
-        items = parse_batch_csv(content)
-    elif file_path.endswith(".json"):
-        items = parse_batch_json(content)
+    # 构建文件名 → 字节映射（用于 MAMI 格式匹配图片）
+    image_file_map: dict[str, bytes] | None = None
+    if image_files_upload:
+        image_file_map = {}
+        for img_file in image_files_upload:
+            img_path = img_file.name if hasattr(img_file, "name") else str(img_file)
+            fname = os.path.basename(img_path)
+            with open(img_path, "rb") as f:
+                image_file_map[fname] = f.read()
+
+    if file_path.endswith(".json"):
+        raw_items = parse_batch_json(content)
+        items = [
+            {**item, "label": None, "file_name": None}
+            if "label" not in item else item
+            for item in raw_items
+        ]
     else:
-        return "**仅支持 .csv 和 .json 格式。**", None, None
+        # CSV / TSV：自动判断 MAMI vs 简单格式
+        items = parse_mami_csv(content, image_file_map)
 
     if not items:
         return "**文件中未找到有效数据条目。**", None, None
@@ -229,6 +245,7 @@ def detect_batch(file, algorithm_display: str):
     extractor = get_extractor()
     model = get_model(algorithm)
     results_data = []
+    has_labels = any(item.get("label") is not None for item in items)
 
     for item in items:
         text = item["text"]
@@ -246,19 +263,60 @@ def detect_batch(file, algorithm_display: str):
         image_features = extractor.extract_image_features(pil_image)
         result = model.predict(text_features, image_features, has_image=has_image)
 
-        results_data.append(
-            {
-                "文本": text[:50] + ("..." if len(text) > 50 else ""),
-                "结果": "仇恨" if result.is_hateful else "安全",
-                "概率": f"{result.hate_probability:.1%}",
-                "文本权重": f"{result.text_weight:.4f}",
-                "图像权重": f"{result.image_weight:.4f}" if has_image else "N/A",
-            }
-        )
+        row = {
+            "文本": text[:50] + ("..." if len(text) > 50 else ""),
+            "预测结果": "仇恨" if result.is_hateful else "安全",
+            "预测概率": f"{result.hate_probability:.1%}",
+            "文本权重": f"{result.text_weight:.4f}",
+            "图像权重": f"{result.image_weight:.4f}" if has_image else "N/A",
+        }
+        if has_labels:
+            label = item.get("label")
+            if label is not None:
+                true_label = "仇恨" if label == 1 else "安全"
+                row["真实标签"] = true_label
+                row["是否正确"] = "✓" if (result.is_hateful == (label == 1)) else "✗"
+            else:
+                row["真实标签"] = ""
+                row["是否正确"] = ""
+        results_data.append(row)
 
     df = pd.DataFrame(results_data)
-    hateful_count = sum(1 for r in results_data if r["结果"] == "仇恨")
+    hateful_count = sum(1 for r in results_data if r["预测结果"] == "仇恨")
     safe_count = len(results_data) - hateful_count
+
+    # 准确率统计（当有真实标签时）
+    accuracy_md = ""
+    if has_labels:
+        labeled = [
+            (r, item)
+            for r, item in zip(results_data, items)
+            if item.get("label") is not None
+        ]
+        if labeled:
+            correct = sum(
+                1 for r, item in labeled
+                if (r["预测结果"] == "仇恨") == (item["label"] == 1)
+            )
+            tp = sum(
+                1 for r, item in labeled
+                if r["预测结果"] == "仇恨" and item["label"] == 1
+            )
+            fp = sum(
+                1 for r, item in labeled
+                if r["预测结果"] == "仇恨" and item["label"] == 0
+            )
+            fn = sum(
+                1 for r, item in labeled
+                if r["预测结果"] == "安全" and item["label"] == 1
+            )
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            accuracy = correct / len(labeled)
+            accuracy_md = f"""
+| **准确率** | {accuracy:.1%} |
+| **精确率** | {precision:.1%} |
+| **召回率** | {recall:.1%} |"""
 
     summary_md = f"""
 ## 批量检测完成
@@ -269,7 +327,7 @@ def detect_batch(file, algorithm_display: str):
 | **仇恨言论** | {hateful_count} |
 | **安全内容** | {safe_count} |
 | **仇恨比例** | {hateful_count / len(results_data):.1%} |
-| **使用算法** | {algorithm_display} |
+| **使用算法** | {algorithm_display} |{accuracy_md}
 """
 
     fig, ax = plt.subplots(figsize=(5, 4))
@@ -302,7 +360,7 @@ def build_interface() -> gr.Blocks:
     .result-safe { background-color: #dcfce7 !important; border: 2px solid #22c55e !important; border-radius: 8px !important; }
     .gr-button.primary { background: linear-gradient(135deg, #1e3a5f, #2563eb) !important; font-weight: bold !important; letter-spacing: 1px !important; }
     #header-block { background: linear-gradient(135deg, #0f172a, #1e3a5f); border-radius: 12px; padding: 20px; margin-bottom: 12px; color: white !important; }
-    #header-block h1, #header-block h3 { color: white !important; }
+    #header-block * { color: white !important; }
     .tab-nav button { font-weight: bold !important; }
     """
     with gr.Blocks(
@@ -332,6 +390,7 @@ def build_interface() -> gr.Blocks:
                             label="上传图片（可选）",
                             type="pil",
                         )
+                        ocr_btn = gr.Button("🔍 OCR 识别文本", size="sm")
                         input_text = gr.Textbox(
                             label="输入文本",
                             placeholder="请输入待检测的英文文本内容...",
@@ -361,6 +420,11 @@ def build_interface() -> gr.Blocks:
                     inputs=[input_text, input_image, algo_select],
                     outputs=[result_output, chart_output, extra_output],
                 )
+                ocr_btn.click(
+                    fn=extract_text_from_image,
+                    inputs=[input_image],
+                    outputs=[input_text],
+                )
 
                 gr.Markdown("---")
                 gr.Markdown("### 💡 快速测试示例")
@@ -388,15 +452,23 @@ def build_interface() -> gr.Blocks:
             # === Tab 2: 批量检测 ===
             with gr.TabItem("📁 批量检测"):
                 gr.Markdown(
-                    """### 上传 CSV 或 JSON 文件进行批量检测
-CSV 格式：必须包含 `text` 列，可选包含 `image` 列（Base64 编码）。
-JSON 格式：对象数组，每个对象包含 `text` 字段，可选包含 `image` 字段。"""
+                    """### 上传 CSV、TSV 或 JSON 文件进行批量检测
+
+支持以下三种格式：
+- **格式一：MAMI 数据集格式**（TSV/CSV，tab 分隔）— 包含 `file_name` 和 `Text Transcription` 列，可同时上传对应图片文件
+- **格式二：简单 CSV** — 包含 `text` 列，可选 `image` 列（Base64 编码）
+- **格式三：JSON 数组** — 每个对象包含 `text` 字段，可选包含 `image` 字段"""
                 )
                 with gr.Row():
                     with gr.Column(scale=1):
                         batch_file = gr.File(
-                            label="上传文件（.csv 或 .json）",
-                            file_types=[".csv", ".json"],
+                            label="上传文件（.csv、.tsv 或 .json）",
+                            file_types=[".csv", ".tsv", ".json"],
+                        )
+                        batch_images = gr.File(
+                            label="上传图片文件（可选，支持多文件，用于 MAMI 格式）",
+                            file_count="multiple",
+                            file_types=["image"],
                         )
                         batch_algo = gr.Dropdown(
                             choices=list(ALGO_MAP.keys()),
@@ -416,7 +488,7 @@ JSON 格式：对象数组，每个对象包含 `text` 字段，可选包含 `im
 
                 batch_btn.click(
                     fn=detect_batch,
-                    inputs=[batch_file, batch_algo],
+                    inputs=[batch_file, batch_images, batch_algo],
                     outputs=[batch_summary, batch_table, batch_chart],
                 )
 
